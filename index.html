@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ampere Desk · Day-Ahead Battery Trading Optimiser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0d0f;
+    --bg2:#101317;
+    --line:rgba(255,255,255,.08);
+    --line2:rgba(255,255,255,.14);
+    --txt:#e8ecef;
+    --txt2:#9aa3ad;
+    --txt3:#5f6a75;
+    --acc:#55e6a5;       /* charge / primary accent */
+    --dis:#e0a94e;       /* discharge */
+    --idle:#3b424a;      /* idle bars */
+    --mono:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{background:var(--bg)}
+  body{
+    font-family:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;
+    background:var(--bg);color:var(--txt);
+    font-size:14px;line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:rgba(85,230,165,.25)}
+
+  .shell{max-width:1400px;margin:0 auto;padding:0 24px 64px}
+
+  /* ---------- header ---------- */
+  header{
+    display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+    padding:26px 0 20px;border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:baseline;gap:14px}
+  .brand .mark{
+    font-family:var(--mono);font-size:12px;letter-spacing:.22em;color:var(--acc);
+    border:1px solid rgba(85,230,165,.35);padding:3px 8px;border-radius:3px;
+  }
+  .brand h1{font-size:19px;font-weight:600;letter-spacing:-.01em}
+  .brand h1 span{color:var(--txt3);font-weight:400}
+  .src{font-family:var(--mono);font-size:11px;color:var(--txt3);text-align:right;line-height:1.6}
+  .src a{color:var(--txt2);text-decoration:none;border-bottom:1px dotted var(--txt3)}
+  .src .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--acc);margin-right:6px;animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* ---------- layout ---------- */
+  .grid{display:grid;grid-template-columns:300px 1fr;gap:36px;padding-top:28px}
+  @media(max-width:920px){.grid{grid-template-columns:1fr}}
+
+  /* ---------- control rail ---------- */
+  .rail{align-self:start;position:sticky;top:16px}
+  @media(max-width:920px){.rail{position:static}}
+  .rail h2{
+    font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--txt3);
+    text-transform:uppercase;margin-bottom:14px;
+  }
+  .ctl{margin-bottom:20px}
+  .ctl label{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+  .ctl label .name{font-size:12.5px;color:var(--txt2)}
+  .ctl label .val{font-family:var(--mono);font-size:12.5px;color:var(--txt)}
+  .ctl input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:2px;border-radius:2px;
+    background:linear-gradient(to right,var(--acc) var(--fill,50%),rgba(255,255,255,.12) var(--fill,50%));
+    outline:none;cursor:pointer;
+  }
+  .ctl input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+    background:var(--bg);border:2px solid var(--acc);transition:transform .15s;
+  }
+  .ctl input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.15)}
+  .ctl input[type=range]::-moz-range-thumb{
+    width:12px;height:12px;border-radius:50%;background:var(--bg);border:2px solid var(--acc);
+  }
+  .ctl .hint{font-size:11px;color:var(--txt3);margin-top:5px}
+  .presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:22px}
+  .presets button{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;color:var(--txt2);
+    background:transparent;border:1px solid var(--line2);border-radius:3px;
+    padding:5px 9px;cursor:pointer;transition:all .2s;
+  }
+  .presets button:hover{border-color:var(--acc);color:var(--acc)}
+  .presets button:active{transform:translateY(1px)}
+  .seg{display:flex;flex-wrap:wrap;gap:6px}
+  .seg button{
+    font-family:var(--mono);font-size:11px;color:var(--txt2);background:transparent;
+    border:1px solid var(--line2);border-radius:3px;padding:6px 10px;cursor:pointer;transition:all .2s;
+  }
+  .seg button.on{border-color:var(--acc);color:var(--acc);background:rgba(85,230,165,.07)}
+  .seg button:active{transform:translateY(1px)}
+  .divider{border-top:1px solid var(--line);margin:24px 0}
+
+  /* ---------- metrics ---------- */
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--line2);border-bottom:1px solid var(--line)}
+  @media(max-width:920px){.metrics{grid-template-columns:repeat(2,1fr)}}
+  .metric{padding:18px 20px 16px 0;border-right:1px solid var(--line)}
+  .metric:last-child{border-right:none}
+  @media(max-width:920px){.metric{border-right:none;border-bottom:1px solid var(--line)}}
+  .metric .k{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--txt3);margin-bottom:6px}
+  .metric .v{font-family:var(--mono);font-size:24px;font-weight:500;letter-spacing:-.02em}
+  .metric .v.acc{color:var(--acc)}
+  .metric .s{font-size:11px;color:var(--txt3);margin-top:3px}
+
+  /* ---------- chart ---------- */
+  .chartblock{margin-top:34px}
+  .chartblock h3{font-size:13px;font-weight:500;color:var(--txt2);margin-bottom:4px}
+  .legend{display:flex;gap:18px;font-family:var(--mono);font-size:10.5px;color:var(--txt3);margin-bottom:10px}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+  #chart{width:100%;display:block}
+  #tip{
+    position:fixed;pointer-events:none;z-index:40;display:none;
+    background:#151a1f;border:1px solid var(--line2);border-radius:4px;
+    padding:8px 11px;font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--txt);
+    box-shadow:0 8px 24px rgba(0,0,0,.5);
+  }
+  #tip .t{color:var(--txt3)}
+
+  /* ---------- comparison ---------- */
+  .cmp{margin-top:34px;border-top:1px solid var(--line);padding-top:22px}
+  .cmp h3{font-size:13px;font-weight:500;color:var(--txt2);margin-bottom:14px}
+  .cmprow{display:grid;grid-template-columns:170px 1fr 90px;align-items:center;gap:14px;margin-bottom:10px}
+  .cmprow .lbl{font-size:12.5px;color:var(--txt2)}
+  .cmprow .lbl small{display:block;font-size:10.5px;color:var(--txt3)}
+  .cmprow .bar{height:14px;border-radius:2px;min-width:2px;transform-origin:left;animation:grow .8s cubic-bezier(.16,1,.3,1) both}
+  @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .cmprow .num{font-family:var(--mono);font-size:12.5px;text-align:right}
+
+  /* ---------- schedule blocks ---------- */
+  .sched{margin-top:34px;border-top:1px solid var(--line);padding-top:22px}
+  .sched h3{font-size:13px;font-weight:500;color:var(--txt2);margin-bottom:14px}
+  .blk{display:flex;gap:14px;align-items:baseline;padding:8px 0;border-bottom:1px dashed var(--line);animation:fadein .5s ease both}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .blk .tag{font-family:var(--mono);font-size:10px;letter-spacing:.1em;padding:2px 7px;border-radius:3px;white-space:nowrap}
+  .blk .tag.c{color:var(--acc);border:1px solid rgba(85,230,165,.35)}
+  .blk .tag.d{color:var(--dis);border:1px solid rgba(224,169,78,.4)}
+  .blk .tm{font-family:var(--mono);font-size:12px;color:var(--txt);white-space:nowrap}
+  .blk .dt{font-size:12px;color:var(--txt3)}
+
+  /* ---------- method ---------- */
+  .method{margin-top:44px;border-top:1px solid var(--line);padding-top:26px;display:grid;grid-template-columns:1.4fr 1fr;gap:44px}
+  @media(max-width:920px){.method{grid-template-columns:1fr}}
+  .method h3{font-size:13px;font-weight:500;color:var(--txt2);margin-bottom:10px}
+  .method p{font-size:13px;color:var(--txt2);max-width:65ch;margin-bottom:10px}
+  .method code{font-family:var(--mono);font-size:12px;color:var(--acc);background:rgba(85,230,165,.07);padding:1px 5px;border-radius:3px}
+  .formula{
+    font-family:var(--mono);font-size:12px;color:var(--txt);background:var(--bg2);
+    border:1px solid var(--line);border-radius:4px;padding:16px 18px;line-height:2;margin:12px 0;overflow-x:auto;
+  }
+  .method ol{margin:8px 0 0 18px;font-size:13px;color:var(--txt2)}
+  .method ol li{margin-bottom:6px}
+  .method a{color:var(--acc);text-decoration:none;border-bottom:1px dotted rgba(85,230,165,.4)}
+  footer{margin-top:48px;border-top:1px solid var(--line);padding-top:18px;font-family:var(--mono);font-size:10.5px;color:var(--txt3);line-height:1.8}
+
+  .stagger>*{animation:fadein .5s ease both}
+  .stagger>*:nth-child(1){animation-delay:.05s}.stagger>*:nth-child(2){animation-delay:.1s}
+  .stagger>*:nth-child(3){animation-delay:.15s}.stagger>*:nth-child(4){animation-delay:.2s}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <div class="brand">
+      <span class="mark">AMPERE DESK</span>
+      <h1>Day-Ahead Battery Trading Optimiser <span>/ BESS arbitrage on real Nord Pool prices</span></h1>
+    </div>
+    <div class="src">
+      <div>Nord Pool day-ahead · Estonian zone (EE) · 15-min resolution · EUR/MWh · times UTC</div>
+      <div>via <a href="https://dashboard.elering.ee/api/nps/price" target="_blank" rel="noopener">Elering public API</a> · fetched 16 Oct 2026 12:42 UTC</div>
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <!-- ===== control rail ===== -->
+    <aside class="rail">
+      <h2>Battery parameters</h2>
+
+      <div class="presets">
+        <button data-preset="utility">Utility 5 MW / 10 MWh</button>
+        <button data-preset="commercial">Commercial 0.5 MW / 1 MWh</button>
+        <button data-preset="home">Home 0.005 MW / 0.01 MWh</button>
+      </div>
+
+      <div class="ctl">
+        <label><span class="name">Energy capacity</span><span class="val" id="v-cap"></span></label>
+        <input type="range" id="cap" min="0.5" max="20" step="0.5" value="10">
+        <div class="hint">Usable discharge energy, MWh</div>
+      </div>
+
+      <div class="ctl">
+        <label><span class="name">Power rating</span><span class="val" id="v-pmax"></span></label>
+        <input type="range" id="pmax" min="0.5" max="20" step="0.5" value="5">
+        <div class="hint">AC charge and discharge limit, MW</div>
+      </div>
+
+      <div class="ctl">
+        <label><span class="name">Round-trip efficiency</span><span class="val" id="v-eta"></span></label>
+        <input type="range" id="eta" min="0.6" max="0.95" step="0.01" value="0.88">
+        <div class="hint">Energy stored = eta × energy purchased</div>
+      </div>
+
+      <div class="ctl">
+        <label><span class="name">Cycle cost</span><span class="val" id="v-deg"></span></label>
+        <input type="range" id="deg" min="0" max="10" step="0.5" value="2">
+        <div class="hint">Degradation charge, EUR per MWh discharged from the cells</div>
+      </div>
+
+      <div class="ctl">
+        <label><span class="name">Initial SOC</span><span class="val" id="v-soc0"></span></label>
+        <input type="range" id="soc0" min="5" max="100" step="5" value="30">
+      </div>
+
+      <div class="ctl">
+        <label><span class="name">Minimum SOC</span><span class="val" id="v-socmin"></span></label>
+        <input type="range" id="socmin" min="0" max="30" step="5" value="5">
+      </div>
+
+      <div class="divider"></div>
+      <h2>Price window</h2>
+      <div class="seg" id="rangeSeg"></div>
+      <div class="hint" style="margin-top:8px" id="rangeNote"></div>
+    </aside>
+
+    <!-- ===== main ===== -->
+    <main>
+      <div class="metrics stagger" id="metrics"></div>
+
+      <div class="chartblock">
+        <h3>Optimised schedule</h3>
+        <div class="legend">
+          <span><i style="background:var(--acc)"></i>Charging (buy)</span>
+          <span><i style="background:var(--dis)"></i>Discharging (sell)</span>
+          <span><i style="background:var(--idle)"></i>Idle</span>
+          <span><i style="background:#e8ecef;border-radius:50%;height:3px;width:14px"></i>State of charge</span>
+          <span style="margin-left:auto">€/MWh · UTC</span>
+        </div>
+        <div id="chartWrap" style="position:relative">
+          <svg id="chart"></svg>
+        </div>
+      </div>
+
+      <div class="cmp">
+        <h3>Strategy comparison, same window and battery</h3>
+        <div id="cmpRows"></div>
+      </div>
+
+      <div class="sched">
+        <h3>Trading blocks</h3>
+        <div id="blocks" class="stagger"></div>
+      </div>
+
+      <!-- ===== method ===== -->
+      <div class="method">
+        <div>
+          <h3>How the optimiser works</h3>
+          <p>The desk solves the standard day-ahead arbitrage program: choose charge <code>c_t</code> and discharge <code>d_t</code> in each settlement period to maximise trading revenue net of degradation.</p>
+          <div class="formula">
+            max&nbsp; Σ_t p_t · (d_t − c_t) · Δt − κ · Σ_t d_t · Δt<br>
+            s.t.&nbsp; E_min ≤ E_0 + Σ (η·c_t − d_t/η)·Δt ≤ E_max<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0 ≤ c_t, d_t ≤ P̄ &nbsp;·&nbsp; E_T ≥ E_0
+          </div>
+          <p>The program is solved exactly by dynamic programming on a 200-step discretised state of charge. Each period allows charge, discharge or hold, capped by the power rating and cell headroom, so the recovered schedule respects every constraint by construction. With perfect foresight of realised prices this is an upper bound on achievable profit; production desks re-run it rolling-horizon on price forecasts, as described in the references.</p>
+        </div>
+        <div>
+          <h3>References</h3>
+          <ol>
+            <li><a href="https://arxiv.org/html/2509.21337v1" target="_blank" rel="noopener">Optimized Operation of Standalone BESS in Cross-Market Energy Arbitrage</a> · arXiv 2509.21337, MILP formulation and backtest framing.</li>
+            <li><a href="http://www.steveklosterman.com/energy-arbitrage" target="_blank" rel="noopener">Designing an energy arbitrage strategy with linear programming</a> · S. Klosterman, LP on NYISO day-ahead data.</li>
+            <li><a href="https://dashboard.elering.ee/api/nps/price" target="_blank" rel="noopener">Elering Nord Pool price API</a> · Estonian bidding zone, the dataset used on this page.</li>
+          </ol>
+          <p style="margin-top:14px">The naive benchmark charges in the cheapest quartile of periods and discharges in the priciest quartile, ignoring the SOC trajectory. The gap between it and the optimum is what the scheduler is paid for.</p>
+        </div>
+      </div>
+
+      <footer>
+        Ampere Desk · corridor demo · prices are realised day-ahead prints, not forecasts · optimisation runs entirely in your browser
+      </footer>
+    </main>
+  </div>
+</div>
+
+<div id="tip"></div>
+
+<script>
+const TS = [1791936000, 1791936900, 1791937800, 1791938700, 1791939600, 1791940500, 1791941400, 1791942300, 1791943200, 1791944100, 1791945000, 1791945900, 1791946800, 1791947700, 1791948600, 1791949500, 1791950400, 1791951300, 1791952200, 1791953100, 1791954000, 1791954900, 1791955800, 1791956700, 1791957600, 1791958500, 1791959400, 1791960300, 1791961200, 1791962100, 1791963000, 1791963900, 1791964800, 1791965700, 1791966600, 1791967500, 1791968400, 1791969300, 1791970200, 1791971100, 1791972000, 1791972900, 1791973800, 1791974700, 1791975600, 1791976500, 1791977400, 1791978300, 1791979200, 1791980100, 1791981000, 1791981900, 1791982800, 1791983700, 1791984600, 1791985500, 1791986400, 1791987300, 1791988200, 1791989100, 1791990000, 1791990900, 1791991800, 1791992700, 1791993600, 1791994500, 1791995400, 1791996300, 1791997200, 1791998100, 1791999000, 1791999900, 1792000800, 1792001700, 1792002600, 1792003500, 1792004400, 1792005300, 1792006200, 1792007100, 1792008000, 1792008900, 1792009800, 1792010700, 1792011600, 1792012500, 1792013400, 1792014300, 1792015200, 1792016100, 1792017000, 1792017900, 1792018800, 1792019700, 1792020600, 1792021500, 1792022400, 1792023300, 1792024200, 1792025100, 1792026000, 1792026900, 1792027800, 1792028700, 1792029600, 1792030500, 1792031400, 1792032300, 1792033200, 1792034100, 1792035000, 1792035900, 1792036800, 1792037700, 1792038600, 1792039500, 1792040400, 1792041300, 1792042200, 1792043100, 1792044000, 1792044900, 1792045800, 1792046700, 1792047600, 1792048500, 1792049400, 1792050300, 1792051200, 1792052100, 1792053000, 1792053900, 1792054800, 1792055700, 1792056600, 1792057500, 1792058400, 1792059300, 1792060200, 1792061100, 1792062000, 1792062900, 1792063800, 1792064700, 1792065600, 1792066500, 1792067400, 1792068300, 1792069200, 1792070100, 1792071000, 1792071900, 1792072800, 1792073700, 1792074600, 1792075500, 1792076400, 1792077300, 1792078200, 1792079100, 1792080000, 1792080900, 1792081800, 1792082700, 1792083600, 1792084500, 1792085400, 1792086300, 1792087200, 1792088100, 1792089000, 1792089900, 1792090800, 1792091700, 1792092600, 1792093500, 1792094400, 1792095300, 1792096200, 1792097100, 1792098000, 1792098900, 1792099800, 1792100700, 1792101600, 1792102500, 1792103400, 1792104300, 1792105200, 1792106100, 1792107000, 1792107900, 1792108800, 1792109700, 1792110600, 1792111500, 1792112400, 1792113300, 1792114200, 1792115100, 1792116000, 1792116900, 1792117800, 1792118700, 1792119600, 1792120500, 1792121400, 1792122300, 1792123200, 1792124100, 1792125000, 1792125900, 1792126800, 1792127700, 1792128600, 1792129500, 1792130400, 1792131300, 1792132200, 1792133100, 1792134000, 1792134900, 1792135800, 1792136700, 1792137600, 1792138500, 1792139400, 1792140300, 1792141200, 1792142100, 1792143000, 1792143900, 1792144800, 1792145700, 1792146600, 1792147500, 1792148400, 1792149300, 1792150200, 1792151100, 1792152000];
+const P  = [63.9, 51.02, 35.17, 35.16, 45.56, 40.01, 40.0, 40.0, 30.3, 35.17, 35.17, 58.85, 35.16, 21.38, 33.39, 51.35, 21.17, 33.42, 35.17, 76.36, 92.63, 110.56, 118.93, 102.92, 103.73, 96.53, 57.95, 37.44, 39.65, 68.24, 35.16, 30.89, 39.93, 35.0, 35.17, 35.16, 43.37, 37.73, 40.89, 44.2, 31.98, 35.11, 39.91, 44.81, 32.0, 37.73, 40.01, 46.85, 30.0, 40.0, 38.92, 115.3, 72.77, 113.81, 33.9, 36.74, 25.0, 27.88, 110.0, 213.04, 110.0, 164.47, 242.84, 260.32, 235.6, 233.31, 184.9, 170.54, 134.22, 134.13, 132.47, 132.69, 204.3, 199.02, 145.94, 115.69, 264.13, 233.57, 169.27, 165.35, 140.0, 182.31, 198.19, 177.17, 41.37, 41.59, 28.0, 21.98, 76.58, 108.01, 127.9, 127.9, 137.69, 127.9, 110.56, 108.0, 127.9, 127.9, 127.89, 127.89, 157.27, 159.9, 157.53, 160.76, 166.01, 165.47, 166.88, 166.99, 166.19, 148.39, 176.56, 187.86, 100.0, 127.89, 232.33, 245.75, 214.13, 247.03, 251.54, 257.77, 235.09, 215.3, 235.09, 196.28, 235.09, 109.06, 127.89, 127.89, 127.89, 118.0, 86.55, 77.46, 55.44, 5.0, 13.69, 17.01, 11.99, 6.74, 6.75, 49.99, 74.8, 76.48, 110.01, 122.0, 120.57, 137.46, 148.4, 145.0, 128.03, 171.44, 235.09, 300.1, 172.81, 235.09, 242.11, 178.4, 224.65, 252.78, 215.29, 215.3, 250.01, 229.47, 214.65, 208.07, 196.93, 250.9, 235.1, 215.3, 235.09, 202.93, 201.56, 158.0, 90.01, 20.0, 127.89, 71.0, 124.13, 50.69, 5.23, 25.0, 60.56, 71.67, 90.43, 36.71, 219.8, 202.29, 176.41, 159.59, 194.08, 159.6, 142.29, 128.2, 110.01, 95.34, 50.0, 79.0, 85.15, 83.59, 82.92, 81.41, 82.18, 81.86, 81.44, 83.48, 64.79, 87.36, 90.75, 98.48, 110.0, 159.6, 110.01, 138.99, 76.07, 83.44, 87.87, 84.11, 100.0, 100.0, 74.68, 74.95, 110.0, 149.0, 82.0, 45.86, 149.0, 89.98, 81.22, 74.26, 86.94, 82.21, 82.81, 82.44, 104.64, 88.41, 78.31, 84.88, 50.0, 67.84, 84.86, 90.89, 50.01];
+const DT = 0.25; // hours per settlement period
+
+/* ---------- state ---------- */
+const S = { cap:10, pmax:5, eta:0.88, deg:2, soc0:30, socmin:5, range:null };
+
+/* ---------- build day index ---------- */
+const days = new Map();
+TS.forEach((t,i)=>{
+  const d = new Date(t*1000).toISOString().slice(0,10);
+  if(!days.has(d)) days.set(d,[]);
+  days.get(d).push(i);
+});
+const dayKeys = [...days.keys()];
+const RANGES = dayKeys.map(k=>({id:k, label:fmtDay(k), idx:days.get(k)}));
+if(dayKeys.length>=2){
+  RANGES.push({id:'48h', label:'48 h ('+dayKeys.slice(0,2).map(k=>fmtDay(k).slice(0,3)).join('\u2013')+')',
+               idx:[...days.get(dayKeys[0]), ...days.get(dayKeys[1])]});
+}
+function fmtDay(k){
+  return new Date(k+'T00:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',timeZone:'UTC'});
+}
+
+/* ---------- controls ---------- */
+const $ = id=>document.getElementById(id);
+function bindSlider(id, key, fmt, onChange){
+  const el = $(id);
+  const paint = ()=>{
+    const pct = (el.value-el.min)/(el.max-el.min)*100;
+    el.style.setProperty('--fill', pct+'%');
+    $('v-'+id).textContent = fmt(parseFloat(el.value));
+  };
+  el.addEventListener('input', ()=>{ paint(); S[key]=parseFloat(el.value); onChange && onChange(); });
+  paint();
+}
+bindSlider('cap','cap',   v=>v.toFixed(1)+' MWh', run);
+bindSlider('pmax','pmax', v=>v.toFixed(1)+' MW',  run);
+bindSlider('eta','eta',   v=>Math.round(v*100)+' %', run);
+bindSlider('deg','deg',   v=>'€ '+v.toFixed(1)+'/MWh', run);
+bindSlider('soc0','soc0', v=>v+' %', run);
+bindSlider('socmin','socmin', v=>v+' %', run);
+
+const PRESETS = {
+  utility:    {cap:10,  pmax:5,    eta:0.88, deg:2},
+  commercial: {cap:1,   pmax:0.5,  eta:0.90, deg:1.5},
+  home:       {cap:0.01,pmax:0.005,eta:0.92, deg:0},
+};
+document.querySelectorAll('.presets button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    const p = PRESETS[b.dataset.preset];
+    for(const [k,v] of Object.entries(p)){
+      S[k]=v; const el=$(k); el.value=v; el.dispatchEvent(new Event('input'));
+    }
+  });
+});
+
+/* range segment buttons */
+const seg = $('rangeSeg');
+RANGES.forEach(r=>{
+  const b=document.createElement('button');
+  b.textContent=r.label; b.dataset.id=r.id;
+  b.addEventListener('click',()=>{ S.range=r.id; paintSeg(); run(); });
+  seg.appendChild(b);
+});
+function paintSeg(){
+  [...seg.children].forEach(b=>b.classList.toggle('on', b.dataset.id===S.range));
+  const r = RANGES.find(x=>x.id===S.range);
+  const partial = r && r.idx.length%4!==0;
+  $('rangeNote').textContent = r ? r.idx.length+' settlement periods of 15 min'+(partial?' (partial day, latest available data)':'') : '';
+}
+
+/* ---------- formatter ---------- */
+const eur = x => (x<0?'−':'')+'€ '+Math.abs(x).toLocaleString('en-GB',{maximumFractionDigits:0});
+const eur2 = x => (x<0?'−':'')+'€ '+Math.abs(x).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});
+const mwh = x => x.toLocaleString('en-GB',{maximumFractionDigits:1})+' MWh';
+
+/* ---------- DP optimiser ---------- */
+function optimise(idx){
+  const N = idx.length;
+  if(N===0) return null;
+  const socMin = S.cap*S.socmin/100;
+  let soc0 = Math.max(S.cap*S.soc0/100, socMin);
+  const span = S.cap - socMin;
+  if(span<=0.001 || soc0<=socMin+0.0005) return {N, infeasible:true};
+  const M = 200;                      // SOC grid steps
+  const r = span/M;                   // MWh per step
+  const i0 = Math.round((soc0-socMin)/r);
+  soc0 = socMin + i0*r;               // snap to grid
+  const eP = S.pmax*DT;               // max AC energy per period
+  const K = Math.max(0, Math.floor(eP*S.eta/r)); // max stored steps per period
+
+  // per-step economics
+  const costC = new Array(N), gainD = new Array(N);
+  for(let t=0;t<N;t++){
+    const p = P[idx[t]];
+    costC[t] = (r/S.eta)*p;           // purchase to store r (grid side)
+    gainD[t] = r*S.eta*p;             // sell from r stored (grid side)
+  }
+  const degStep = r*S.deg;
+
+  const NEG = -Infinity;
+  // f[t][i]: best future profit from period t with SOC step i, ending >= i0
+  const f = new Array(N+1);
+  f[N] = new Float64Array(M+1);
+  for(let i=0;i<=M;i++) f[N][i] = i>=i0 ? 0 : NEG;
+  for(let t=N-1;t>=0;t--){
+    const ft = new Float64Array(M+1), fn = f[t+1];
+    const c = costC[t], g = gainD[t]-degStep;
+    for(let i=0;i<=M;i++){
+      let best = fn[i];                                     // hold
+      const kc = Math.min(K, M-i);
+      for(let k=1;k<=kc;k++){
+        const v = fn[i+k]-k*c; if(v>best) best=v;
+      }
+      const kd = Math.min(K, i);
+      for(let k=1;k<=kd;k++){
+        const v = fn[i-k]+k*g; if(v>best) best=v;
+      }
+      ft[i]=best;
+    }
+    f[t]=ft;
+  }
+  if(f[0][i0]===NEG) return {N, infeasible:true};
+
+  // forward backtrack
+  const mode = new Array(N).fill(0), steps = new Float64Array(N);
+  let i = i0;
+  for(let t=0;t<N;t++){
+    const fn=f[t+1], c=costC[t], g=gainD[t]-degStep;
+    let best=fn[i], bm=0, bs=0;
+    const kc=Math.min(K,M-i);
+    for(let k=1;k<=kc;k++){ const v=fn[i+k]-k*c; if(v>best+1e-9){best=v;bm=1;bs=k;} }
+    const kd=Math.min(K,i);
+    for(let k=1;k<=kd;k++){ const v=fn[i-k]+k*g; if(v>best+1e-9){best=v;bm=-1;bs=k;} }
+    mode[t]=bm; steps[t]=bs;
+    i += bm*bs;
+  }
+
+  // build schedule + metrics
+  let soc=soc0, rev=0, cost=0, soldE=0, buyE=0, drawE=0;
+  const acts = new Array(N);
+  for(let t=0;t<N;t++){
+    const p=P[idx[t]]; let ac=0;
+    if(mode[t]===1){ ac = steps[t]*r/S.eta/DT; buyE += steps[t]*r/S.eta; cost += costC[t]*steps[t]; soc += steps[t]*r; }
+    else if(mode[t]===-1){ ac = steps[t]*r*S.eta/DT; soldE += steps[t]*r*S.eta; rev += gainD[t]*steps[t]; drawE += steps[t]*r; soc -= steps[t]*r; }
+    acts[t]={m:mode[t], ac, soc};
+  }
+  return {
+    acts, N,
+    metrics:{
+      net: rev-cost, rev, cost, soldE, buyE, drawE,
+      cycles: drawE/S.cap,
+      avgBuy: buyE>0? cost/buyE : null,
+      avgSell: soldE>0? rev/soldE : null,
+      soc0, socEnd: soc,
+    },
+    i0
+  };
+}
+
+/* ---------- naive benchmark ---------- */
+function naive(idx){
+  const ps = idx.map(i=>P[i]).slice().sort((a,b)=>a-b);
+  const q = a => ps[Math.min(ps.length-1, Math.floor(a*(ps.length-1)))];
+  const lo=q(0.25), hi=q(0.75);
+  const socMin=S.cap*S.socmin/100;
+  let soc=Math.max(S.cap*S.soc0/100, socMin), rev=0, cost=0, soldE=0, buyE=0, drawE=0;
+  const eP=S.pmax*DT, acts=new Array(idx.length);
+  for(let t=0;t<idx.length;t++){
+    const p=P[idx[t]]; let m=0,ac=0;
+    if(p<=lo){
+      const add=Math.min(eP*S.eta, S.cap-soc);
+      if(add>1e-9){ m=1; ac=add/S.eta/DT; soc+=add; buyE+=add/S.eta; cost+=add/S.eta*p; }
+    } else if(p>=hi){
+      const draw=Math.min(eP*S.eta, soc-socMin);
+      if(draw>1e-9){ m=-1; ac=draw*S.eta/DT; soc-=draw; drawE+=draw; soldE+=draw*S.eta; rev+=draw*S.eta*p; }
+    }
+    acts[t]={m,ac,soc};
+  }
+  return {acts, metrics:{net:rev-cost, cycles:drawE/S.cap}};
+}
+
+/* ---------- metrics render ---------- */
+function renderMetrics(m, N){
+  const spread = (m.avgBuy!=null && m.avgSell!=null) ? m.avgSell-m.avgBuy : null;
+  const rows = [
+    ['Net revenue', eur(m.net), 'after cycle cost', 'acc'],
+    ['Sell revenue', eur(m.rev), m.avgSell!=null? 'avg '+eur2(m.avgSell)+'/MWh sold':''],
+    ['Charge cost', eur(m.cost), m.avgBuy!=null? 'avg '+eur2(m.avgBuy)+'/MWh bought':''],
+    ['Captured spread', spread!=null? eur2(spread):'—', 'sell minus buy price'],
+    ['Throughput', mwh(m.soldE), m.cycles.toFixed(2)+' equivalent cycles'],
+    ['Window', N+' × 15 min', (N*0.25).toFixed(1)+' h horizon'],
+  ];
+  $('metrics').innerHTML = rows.map(r=>
+    '<div class="metric"><div class="k">'+r[0]+'</div><div class="v '+(r[3]||'')+'">'+r[1]+'</div><div class="s">'+(r[2]||'')+'</div></div>'
+  ).join('');
+}
+
+/* ---------- chart ---------- */
+function renderChart(res, idx){
+  const wrap = $('chartWrap');
+  const W = Math.max(640, wrap.clientWidth), H = 380;
+  const padL=52, padR=48, padT=16, padB=30;
+  const pw = W-padL-padR, ph = H-padT-padB;
+  const N = res.N;
+  const pmin = Math.min(0, Math.min(...idx.map(i=>P[i])));
+  const pmax = Math.max(...idx.map(i=>P[i]))*1.06;
+  const y = v => padT + ph - (v-pmin)/(pmax-pmin)*ph;
+  const bw = pw/N;
+  let g = '';
+
+  // y grid
+  for(let k=0;k<=4;k++){
+    const v = pmin + (pmax-pmin)*k/4, yy=y(v);
+    g += '<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="rgba(255,255,255,.05)"/>';
+    g += '<text x="'+(padL-8)+'" y="'+(yy+4)+'" fill="#5f6a75" font-size="10" font-family="Geist Mono,monospace" text-anchor="end">'+Math.round(v)+'</text>';
+  }
+  // bars
+  for(let t=0;t<N;t++){
+    const a=res.acts[t], col = a.m===1?'var(--acc)': a.m===-1?'var(--dis)':'var(--idle)';
+    const x = padL + t*bw, yv = y(P[idx[t]]);
+    const h = Math.max(1, padT+ph-yv);
+    g += '<rect x="'+(x+0.4).toFixed(2)+'" y="'+yv.toFixed(2)+'" width="'+Math.max(0.8,bw-0.8).toFixed(2)+'" height="'+h.toFixed(2)+'" fill="'+col+'"'+(a.m===0?' opacity=".45"':'')+'/>';
+  }
+  // SOC line
+  const socMin=S.cap*S.socmin/100;
+  const sy = v => padT + ph - ((v-socMin)/(S.cap-socMin||1))*ph;
+  let path='M';
+  for(let t=0;t<=N;t++){
+    const v = t===0 ? res.acts[0].soc : res.acts[t-1].soc;
+    path += (padL+t*bw).toFixed(1)+','+Math.max(padT,Math.min(padT+ph,sy(v))).toFixed(1)+(t<N?' L':'');
+  }
+  g += '<path d="'+path+'" fill="none" stroke="#e8ecef" stroke-width="1.6" opacity=".9"/>';
+  // x labels every 3h
+  for(let t=0;t<N;t+=12){
+    const d = new Date(TS[idx[t]]*1000);
+    const lab = String(d.getUTCHours()).padStart(2,'0')+':00';
+    g += '<text x="'+(padL+t*bw)+'" y="'+(H-8)+'" fill="#5f6a75" font-size="10" font-family="Geist Mono,monospace">'+lab+'</text>';
+  }
+
+  const svg = $('chart');
+  svg.setAttribute('width',W); svg.setAttribute('height',H);
+  svg.innerHTML = '<g>'+g+'</g><rect id="hover" x="'+padL+'" y="'+padT+'" width="'+pw+'" height="'+ph+'" fill="transparent"/>';
+
+  // tooltip
+  const tip = $('tip'), hov = svg.querySelector('#hover');
+  hov.addEventListener('mousemove', e=>{
+    const rect = svg.getBoundingClientRect();
+    const x = e.clientX-rect.left - padL;
+    const t = Math.max(0, Math.min(N-1, Math.floor(x/bw)));
+    const a = res.acts[t], p = P[idx[t]];
+    const d = new Date(TS[idx[t]]*1000);
+    const when = d.toISOString().slice(5,16).replace('T',' ');
+    const act = a.m===1? '<span style="color:var(--acc)">charge '+a.ac.toFixed(1)+' MW</span>'
+             : a.m===-1? '<span style="color:var(--dis)">discharge '+a.ac.toFixed(1)+' MW</span>'
+             : 'idle';
+    tip.innerHTML = '<span class="t">'+when+' UTC</span><br>'+p.toFixed(2)+' €/MWh<br>'+act+'<br>SOC '+Math.round(a.soc/S.cap*100)+' %';
+    tip.style.display='block';
+    tip.style.left = Math.min(window.innerWidth-170, e.clientX+14)+'px';
+    tip.style.top  = (e.clientY+16)+'px';
+  });
+  hov.addEventListener('mouseleave', ()=> tip.style.display='none');
+}
+
+/* ---------- comparison ---------- */
+function renderCmp(opt, nv){
+  const rows = [
+    ['Optimal schedule','dynamic programming, perfect foresight', opt.metrics.net, 'var(--acc)'],
+    ['Naive quartile rule','cheapest 25 % charge, priciest 25 % discharge', nv.metrics.net, 'var(--dis)'],
+    ['No battery','sit on the sidelines', 0, 'var(--idle)'],
+  ];
+  const mx = Math.max(1, ...rows.map(r=>Math.abs(r[2])));
+  $('cmpRows').innerHTML = rows.map((r,i)=>{
+    const w = Math.max(1.5, Math.abs(r[2])/mx*100);
+    return '<div class="cmprow"><div class="lbl">'+r[0]+'<small>'+r[1]+'</small></div>'+
+      '<div style="background:rgba(255,255,255,.04);border-radius:2px;height:14px"><div class="bar" style="width:'+w+'%;background:'+r[3]+';animation-delay:'+(i*0.1)+'s"></div></div>'+
+      '<div class="num">'+eur(r[2])+'</div></div>';
+  }).join('');
+}
+
+/* ---------- trading blocks ---------- */
+function renderBlocks(res, idx){
+  const blocks=[]; let cur=null;
+  for(let t=0;t<res.N;t++){
+    const a=res.acts[t];
+    if(a.m===0){ if(cur){blocks.push(cur); cur=null;} continue; }
+    const st = TS[idx[t]]*1000;
+    if(cur && cur.m===a.m && st===cur.end){ cur.end=st+15*60*1000; cur.sum+=P[idx[t]]; cur.n++; cur.maxMW=Math.max(cur.maxMW,a.ac); }
+    else { if(cur)blocks.push(cur); cur={m:a.m,start:st,end:st+15*60*1000,sum:P[idx[t]],n:1,maxMW:a.ac}; }
+  }
+  if(cur)blocks.push(cur);
+  const el=$('blocks');
+  if(!blocks.length){ el.innerHTML='<div class="dt" style="padding:8px 0">No profitable trades in this window with the current battery. Widen the window or reduce cycle cost.</div>'; return; }
+  el.innerHTML = blocks.slice(0,14).map((b,i)=>{
+    const f = d => new Date(d).toISOString().slice(11,16);
+    const avg = (b.sum/b.n).toFixed(1);
+    return '<div class="blk" style="animation-delay:'+(i*0.05)+'s">'+
+      '<span class="tag '+(b.m===1?'c':'d')+'">'+(b.m===1?'CHARGE':'DISCHARGE')+'</span>'+
+      '<span class="tm">'+f(b.start)+'\u2013'+f(b.end)+' UTC</span>'+
+      '<span class="dt">avg '+avg+' €/MWh · up to '+b.maxMW.toFixed(1)+' MW · '+((b.end-b.start)/3600000).toFixed(2)+' h</span>'+
+    '</div>';
+  }).join('');
+}
+
+/* ---------- run ---------- */
+function run(){
+  const r = RANGES.find(x=>x.id===S.range) || RANGES[0];
+  S.range = r.id; paintSeg();
+  const opt = optimise(r.idx);
+  if(!opt || opt.infeasible){
+    $('metrics').innerHTML='<div class="metric"><div class="k">Net revenue</div><div class="v">—</div><div class="s">Infeasible: raise initial SOC above minimum or widen the SOC window.</div></div>';
+    $('cmpRows').innerHTML=''; $('blocks').innerHTML=''; $('chart').innerHTML='';
+    return;
+  }
+  renderMetrics(opt.metrics, opt.N);
+  renderChart(opt, r.idx);
+  renderCmp(opt, naive(r.idx));
+  renderBlocks(opt, r.idx);
+}
+
+let rt; window.addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(run,150); });
+S.range = RANGES[Math.min(1, RANGES.length-1)].id;
+run();
+</script>
+</body>
+</html>
